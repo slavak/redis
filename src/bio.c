@@ -244,6 +244,9 @@ void *bioProcessBackgroundJobs(void *arg) {
                         "Fail to fsync the AOF file: %s",strerror(errno));
                 }
             } else {
+                off_t aof_current_size;
+                atomicGet(server.aof_current_size, aof_current_size);
+                atomicSet(server.aof_fsync_offset, aof_current_size);
                 atomicSet(server.aof_bio_fsync_status,C_OK);
             }
         } else if (type == BIO_LAZY_FREE) {

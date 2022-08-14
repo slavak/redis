@@ -1317,14 +1317,16 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
         }
 
         /* Trigger an AOF rewrite if needed. */
+        off_t aof_current_size;
+        atomicGet(server.aof_current_size, aof_current_size);
         if (server.aof_state == AOF_ON &&
             !hasActiveChildProcess() &&
             server.aof_rewrite_perc &&
-            server.aof_current_size > server.aof_rewrite_min_size)
+            aof_current_size > server.aof_rewrite_min_size)
         {
             long long base = server.aof_rewrite_base_size ?
                 server.aof_rewrite_base_size : 1;
-            long long growth = (server.aof_current_size*100/base) - 100;
+            long long growth = (aof_current_size*100/base) - 100;
             if (growth >= server.aof_rewrite_perc && !aofRewriteLimited()) {
                 serverLog(LL_NOTICE,"Starting automatic rewriting of AOF on %lld%% growth",growth);
                 rewriteAppendOnlyFileBackground();
@@ -5558,6 +5560,8 @@ sds genRedisInfoString(dict *section_dict, int all_sections, int everything) {
             server.stat_module_cow_bytes);
 
         if (server.aof_enabled) {
+            off_t aof_current_size;
+            atomicGet(server.aof_current_size, aof_current_size);
             info = sdscatprintf(info,
                 "aof_current_size:%lld\r\n"
                 "aof_base_size:%lld\r\n"
@@ -5565,7 +5569,7 @@ sds genRedisInfoString(dict *section_dict, int all_sections, int everything) {
                 "aof_buffer_length:%zu\r\n"
                 "aof_pending_bio_fsync:%llu\r\n"
                 "aof_delayed_fsync:%lu\r\n",
-                (long long) server.aof_current_size,
+                (long long) aof_current_size,
                 (long long) server.aof_rewrite_base_size,
                 server.aof_rewrite_scheduled,
                 sdslen(server.aof_buf),

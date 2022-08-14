@@ -832,7 +832,9 @@ int openNewIncrAofForAppend(void) {
      * is already synced at this point so fsync doesn't matter. */
     if (server.aof_fd != -1) {
         aof_background_fsync_and_close(server.aof_fd);
-        server.aof_fsync_offset = server.aof_current_size;
+        off_t aof_current_size;
+        atomicGet(server.aof_current_size, aof_current_size);
+        atomicSet(server.aof_fsync_offset, aof_current_size);
         server.aof_last_fsync = server.unixtime;
     }
     server.aof_fd = newfd;
@@ -952,7 +954,9 @@ void stopAppendOnly(void) {
     if (redis_fsync(server.aof_fd) == -1) {
         serverLog(LL_WARNING,"Fail to fsync the AOF file: %s",strerror(errno));
     } else {
-        server.aof_fsync_offset = server.aof_current_size;
+        off_t aof_current_size;
+        atomicGet(server.aof_current_size, aof_current_size);
+        atomicSet(server.aof_fsync_offset, aof_current_size);
         server.aof_last_fsync = server.unixtime;
     }
     close(server.aof_fd);
@@ -1068,8 +1072,11 @@ void flushAppendOnlyFile(int force) {
          * called only when aof buffer is not empty, so if users
          * stop write commands before fsync called in one second,
          * the data in page cache cannot be flushed in time. */
+        off_t aof_fsync_offset, aof_current_size;
+        atomicGet(server.aof_fsync_offset, aof_fsync_offset);
+        atomicGet(server.aof_current_size, aof_current_size);
         if (server.aof_fsync == AOF_FSYNC_EVERYSEC &&
-            server.aof_fsync_offset != server.aof_current_size &&
+            aof_fsync_offset != aof_current_size &&
             server.unixtime > server.aof_last_fsync &&
             !(sync_in_progress = aofFsyncInProgress())) {
             goto try_fsync;
@@ -1191,7 +1198,7 @@ void flushAppendOnlyFile(int force) {
             /* Trim the sds buffer if there was a partial write, and there
              * was no way to undo it with ftruncate(2). */
             if (nwritten > 0) {
-                server.aof_current_size += nwritten;
+                atomicIncr(server.aof_current_size, nwritten);
                 server.aof_last_incr_size += nwritten;
                 sdsrange(server.aof_buf,nwritten,-1);
             }
@@ -1206,7 +1213,7 @@ void flushAppendOnlyFile(int force) {
             server.aof_last_write_status = C_OK;
         }
     }
-    server.aof_current_size += nwritten;
+    atomicIncr(server.aof_current_size, nwritten);
     server.aof_last_incr_size += nwritten;
 
     /* Re-use AOF buffer when it is small enough. The maximum comes from the
@@ -1239,13 +1246,14 @@ try_fsync:
         }
         latencyEndMonitor(latency);
         latencyAddSampleIfNeeded("aof-fsync-always",latency);
-        server.aof_fsync_offset = server.aof_current_size;
+        off_t aof_current_size;
+        atomicGet(server.aof_current_size, aof_current_size);
+        atomicSet(server.aof_fsync_offset, aof_current_size);
         server.aof_last_fsync = server.unixtime;
     } else if ((server.aof_fsync == AOF_FSYNC_EVERYSEC &&
                 server.unixtime > server.aof_last_fsync)) {
         if (!sync_in_progress) {
             aof_background_fsync(server.aof_fd);
-            server.aof_fsync_offset = server.aof_current_size;
         }
         server.aof_last_fsync = server.unixtime;
     }
@@ -1726,7 +1734,7 @@ int loadAppendOnlyFiles(aofManifest *am) {
         }
     }
 
-    server.aof_current_size = total_size;
+    atomicSet(server.aof_current_size, total_size);
     /* Ideally, the aof_rewrite_base_size variable should hold the size of the
      * AOF when the last rewrite ended, this should include the size of the
      * incremental file that was created during the rewrite since otherwise we
@@ -1737,7 +1745,7 @@ int loadAppendOnlyFiles(aofManifest *am) {
      * executed early, but that shouldn't be a problem since everything will be
      * fine after the first AOFRW. */
     server.aof_rewrite_base_size = base_size;
-    server.aof_fsync_offset = server.aof_current_size;
+    atomicSet(server.aof_fsync_offset, total_size);
 
 cleanup:
     stopLoading(ret == AOF_OK || ret == AOF_TRUNCATED);
@@ -2661,9 +2669,10 @@ void backgroundRewriteDoneHandler(int exitcode, int bysignal) {
         if (server.aof_fd != -1) {
             /* AOF enabled. */
             server.aof_selected_db = -1; /* Make sure SELECT is re-issued */
-            server.aof_current_size = getAppendOnlyFileSize(new_base_filename, NULL) + server.aof_last_incr_size;
-            server.aof_rewrite_base_size = server.aof_current_size;
-            server.aof_fsync_offset = server.aof_current_size;
+            off_t aof_current_size = getAppendOnlyFileSize(new_base_filename, NULL) + server.aof_last_incr_size;
+            atomicSet(server.aof_current_size, aof_current_size);
+            atomicSet(server.aof_fsync_offset, aof_current_size);
+            server.aof_rewrite_base_size = aof_current_size;
             server.aof_last_fsync = server.unixtime;
         }
 
