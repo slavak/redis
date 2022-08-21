@@ -1668,6 +1668,7 @@ struct redisServer {
     off_t aof_current_size;         /* AOF current size (Including BASE + INCRs). */
     off_t aof_last_incr_size;       /* The size of the latest incr AOF. */
     off_t aof_fsync_offset;         /* AOF offset which is already synced to disk. */
+    redisAtomic uint64_t aof_fsync_epoch;  /* Current AOF fsync "epoch"; used for WAIT AOF */
     int aof_flush_sleep;            /* Micros to sleep before flush. (used by tests) */
     int aof_rewrite_scheduled;      /* Rewrite once BGSAVE terminates. */
     sds aof_buf;      /* AOF buffer, written before entering the event loop */

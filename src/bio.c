@@ -245,6 +245,7 @@ void *bioProcessBackgroundJobs(void *arg) {
                 }
             } else {
                 atomicSet(server.aof_bio_fsync_status,C_OK);
+                atomicIncr(server.aof_fsync_epoch, 1);
             }
         } else if (type == BIO_LAZY_FREE) {
             job->free_args.free_fn(job->free_args.free_args);
