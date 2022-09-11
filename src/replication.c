@@ -3460,16 +3460,34 @@ void waitCommand(client *c) {
     mstime_t timeout;
     long numreplicas, ackreplicas;
     long long offset = c->woff;
+    int waitaof = 0; /* True if the user requested to wait for AOF sync. */
 
     if (server.masterhost) {
         addReplyError(c,"WAIT cannot be used with replica instances. Please also note that since Redis 4.0 if a replica is configured to be writable (which is not the default) writes to replicas are just local and are not propagated.");
         return;
     }
 
+    int arg_i = 1;
+
+    /* Optional AOF modifier parsing. */
+    if (arg_i >= c->argc)
+        addReplyErrorArity(c);
+    if (!strcasecmp(c->argv[arg_i]->ptr,"AOF")) {
+        waitaof = 1;
+        arg_i++;
+        if (server.aof_state != AOF_ON) {
+            addReplyError(c,"WAIT AOF is only allowed when AOF is enabled");
+            return;
+        }
+    }
+
+    if (c->argc - arg_i != 2)
+        addReplyErrorArity(c);
+
     /* Argument parsing. */
-    if (getLongFromObjectOrReply(c,c->argv[1],&numreplicas,NULL) != C_OK)
+    if (getLongFromObjectOrReply(c,c->argv[arg_i++],&numreplicas,NULL) != C_OK)
         return;
-    if (getTimeoutFromObjectOrReply(c,c->argv[2],&timeout,UNIT_MILLISECONDS)
+    if (getTimeoutFromObjectOrReply(c,c->argv[arg_i++],&timeout,UNIT_MILLISECONDS)
         != C_OK) return;
 
     /* First try without blocking at all. */
