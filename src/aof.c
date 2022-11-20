@@ -962,7 +962,7 @@ void stopAppendOnly(void) {
     server.aof_state = AOF_OFF;
     server.aof_rewrite_scheduled = 0;
     server.aof_last_incr_size = 0;
-    server.fsynced_reploff = 0;
+    server.fsynced_reploff = -1;
     atomicSet(server.pot_fsynced_reploff, 0);
     killAppendOnlyChild();
     sdsfree(server.aof_buf);
